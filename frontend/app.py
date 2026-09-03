@@ -7,6 +7,9 @@ sys.path.append(".")
 
 from backend.recovery_engine import RecoveryEngine
 
+from backend.prioritization import (
+    rank_recovery_opportunities
+)
 
 st.set_page_config(
     page_title="RecoverX",
@@ -100,6 +103,55 @@ col4.metric(
     f"{recovery_rate:.1f}%"
 )
 
+st.divider()
+
+st.header("🤖 Next Best Recovery")
+
+ranked = rank_recovery_opportunities(
+    results
+)
+
+best = ranked.iloc[0]
+
+col1, col2, col3, col4 = st.columns(4)
+
+col1.metric(
+    "Customer",
+    best["customer_id"]
+)
+
+col2.metric(
+    "Revenue At Risk",
+    f"₹{best['amount']:,.0f}"
+)
+
+col3.metric(
+    "Expected Recovery",
+    f"₹{best['expected_recoverable_revenue']:,.0f}"
+)
+
+col4.metric(
+    "Priority Score",
+    f"{best['priority_score']:,.0f}"
+)
+
+st.success(
+    f"""
+### Recommended Action: {best['strategy.action']}
+
+**Recovery Probability:** \
+{best['recovery_probability'] * 100:.1f}%
+
+**Customer Friction:** \
+{best['friction']}
+
+**Risk Score:** \
+{best['risk_score']}/100
+
+**Why:** \
+{best['strategy.reason']}
+"""
+)
 
 st.divider()
 
