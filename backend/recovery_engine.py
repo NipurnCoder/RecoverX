@@ -13,6 +13,8 @@ from backend.policy_engine import PolicyEngine
 
 from backend.simulator import PaymentSimulator
 
+from backend.friction import calculate_friction
+
 
 class RecoveryEngine:
 
@@ -75,6 +77,10 @@ class RecoveryEngine:
             )
         )
 
+        friction = calculate_friction(
+            strategy["action"]
+        )
+
         # --------------------------------
         # STEP 4: Policy
         # --------------------------------
@@ -102,6 +108,9 @@ class RecoveryEngine:
 
             "expected_recoverable_revenue":
                 expected_revenue,
+
+            "friction":
+                friction,
 
             "root_cause":
                 root_cause,
