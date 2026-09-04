@@ -10,15 +10,14 @@ from backend.agents import (
 )
 
 from backend.policy_engine import PolicyEngine
-
 from backend.simulator import PaymentSimulator
-
 from backend.friction import calculate_friction
+from backend.audit import log_event
 
 
 class RecoveryEngine:
 
-    def __init__(self):
+    def __init__(self, approval_manager=None):
 
         self.root_agent = RootCauseAgent()
 
@@ -27,6 +26,9 @@ class RecoveryEngine:
         self.policy_engine = PolicyEngine()
 
         self.payment_simulator = PaymentSimulator()
+
+        self.approval_manager = approval_manager
+
 
     def process(
         self,
@@ -90,6 +92,24 @@ class RecoveryEngine:
             strategy["action"]
         )
 
+        # --------------------------------
+        # AUDIT: Recovery Decision
+        # --------------------------------
+
+        log_event(
+            "RECOVERY_DECISION",
+            transaction["transaction_id"],
+            {
+                "strategy": strategy["action"],
+                "recovery_probability": recovery_probability,
+                "expected_revenue": expected_revenue,
+                "risk_score": risk_score,
+                "friction": friction,
+                "policy_decision": policy["decision"],
+                "policy_reason": policy["reason"]
+            }
+        )
+
         result = {
             "transaction_id":
                 transaction["transaction_id"],
@@ -132,6 +152,8 @@ class RecoveryEngine:
         if policy["decision"] != "ALLOW":
 
             result["status"] = policy["decision"]
+
+            result["recovered_revenue"] = 0
 
             return result
 
@@ -189,4 +211,115 @@ class RecoveryEngine:
 
             result["recovered_revenue"] = 0
 
+        # --------------------------------
+        # AUDIT: Recovery Result
+        # --------------------------------
+
+        log_event(
+            "RECOVERY_RESULT",
+            transaction["transaction_id"],
+            {
+                "status": result["status"],
+                "recovered_revenue":
+                    result["recovered_revenue"]
+            }
+        )
+
         return result
+
+
+    def execute_approved(
+        self,
+        transaction
+    ):
+
+        action = transaction["strategy"]
+
+        # --------------------------------
+        # Execute Approved Recovery
+        # --------------------------------
+
+        if action == "DELAYED_RETRY":
+
+            execution = (
+                self.payment_simulator.retry_payment(
+                    transaction
+                )
+            )
+
+        elif action == "PAYMENT_LINK":
+
+            execution = (
+                self.payment_simulator.payment_link(
+                    transaction
+                )
+            )
+
+        elif action == "REMINDER":
+
+            execution = (
+                self.payment_simulator.reminder(
+                    transaction
+                )
+            )
+
+        else:
+
+            execution = {
+                "success": False,
+                "amount": transaction["amount"],
+                "message": "NO_AUTO_EXECUTION"
+            }
+
+        # --------------------------------
+        # Result
+        # --------------------------------
+
+        if execution["success"]:
+
+            status = "RECOVERED"
+
+            recovered_revenue = (
+                transaction["amount"]
+            )
+
+        else:
+
+            status = "NOT_RECOVERED"
+
+            recovered_revenue = 0
+
+        # --------------------------------
+        # Audit
+        # --------------------------------
+
+        log_event(
+            "APPROVED_RECOVERY_RESULT",
+            transaction["transaction_id"],
+            {
+                "status": status,
+                "recovered_revenue":
+                    recovered_revenue,
+                "strategy": action
+            }
+        )
+
+        return {
+            "transaction_id":
+                transaction["transaction_id"],
+
+            "amount":
+                transaction["amount"],
+
+            "strategy":
+                action,
+
+            "execution":
+                execution,
+
+            "status":
+                status,
+
+            "recovered_revenue":
+                recovered_revenue
+        }
